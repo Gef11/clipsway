@@ -3,7 +3,7 @@ name = "clipsway"
 version = "0.1.0"
 authors = ["Gef11"]
 edition = "2018"
-#
+
 [dependencies]
 wl-clipboard-rs = "^0.3"
 clap = "^2"
