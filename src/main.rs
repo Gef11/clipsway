@@ -1,5 +1,6 @@
 use std::fs::{self, File};
 use std::io::{self, Read, Write};
+use std::str;
 use clap::{App, Arg};
 use lazy_static::lazy_static;
 use std::env::var;
@@ -13,7 +14,7 @@ lazy_static! {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-struct History(Vec<(String, String)>);
+struct History(Vec<(String, Vec<u8>)>);
 
 fn main() {
     let matches = App::new("Clipsway")
@@ -48,10 +49,10 @@ fn main() {
 
         if &mimetype[..5] == "image" {
             let image_path = format!("{}/{}", &*IMAGE_PATH, get_image_num());
-            append_to_history((mimetype, image_path.to_owned()), &mut hist);
-            save_image(image_path, clip_cont);
+            append_to_history((mimetype, image_path.as_bytes().to_vec()), &mut hist);
+            save_image(image_path.as_str(), clip_cont);
         } else {
-            append_to_history((mimetype, String::from_utf8(clip_cont).unwrap()), &mut hist);
+            append_to_history((mimetype, clip_cont), &mut hist);
         }
 
         if hist.len() > 1000 {
@@ -66,6 +67,8 @@ fn main() {
     else if matches.is_present("history") {
         for (i, line) in history_read().iter().enumerate() {
             let (mimetype, line) = line;
+            let line = str::from_utf8(line.as_slice()).unwrap();
+
             if &mimetype[..5] == "image" {
                 println!("{}:", i);
                 io::stdout().write_all(Command::new("img2sixel").arg(line).output().unwrap().stdout.as_slice()).unwrap();
@@ -95,14 +98,14 @@ fn main() {
     }
 }
 
-fn append_to_history(val: (String, String), history: &mut Vec<(String, String)>) {
+fn append_to_history(val: (String, Vec<u8>), history: &mut Vec<(String, Vec<u8>)>) {
     let f = File::create(&*HIST_PATH).unwrap();
     history.push(val);
 
     ron::ser::to_writer(f, &History{ 0: history.to_owned() }).unwrap();
 }
 
-fn remove_from_history(num: usize, hist: &mut Vec<(String, String)>) {
+fn remove_from_history(num: usize, hist: &mut Vec<(String, Vec<u8>)>) {
     let f = File::create(&*HIST_PATH).unwrap();
     hist.remove(num);
 
@@ -136,7 +139,7 @@ fn copy_to_clipboard(mimetype: String, cont: Vec<u8>) {
     opts.copy(Source::Bytes(&cont), mime).unwrap();
 }
 
-fn history_read() -> Vec<(String, String)> {
+fn history_read() -> Vec<(String, Vec<u8>)> {
     let f = File::open(&*HIST_PATH).unwrap();
     let history: History = ron::de::from_reader(f).unwrap();
     history.0
@@ -155,12 +158,13 @@ fn take(val: &str) {
     let (mime, cont) = hist[num].to_owned();
 
     if &mime[..5] == "image" {
-        let image = read_image(&cont);
-        fs::remove_file(&cont).unwrap();
+        let path = str::from_utf8(cont.as_slice()).unwrap();
+        let image = read_image(path);
+        fs::remove_file(path).unwrap();
 
         copy_to_clipboard(mime, image);
     } else {
-        copy_to_clipboard(mime, cont.as_bytes().to_vec());
+        copy_to_clipboard(mime, cont);
     }
     remove_from_history(num, &mut hist);
 }
@@ -171,7 +175,7 @@ fn get_image_num() -> usize {
     num + 1
 }
 
-fn save_image(path: String, cont: Vec<u8>) {
+fn save_image(path: &str, cont: Vec<u8>) {
     let mut f = File::create(path).unwrap();
     f.write_all(&cont).unwrap();
 }
